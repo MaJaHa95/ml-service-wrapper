@@ -223,8 +223,8 @@ async def run_async(service: typing.Union[services.Service, typing.Callable], in
     if split_dataset_name:
         df = get_input_dataframe(split_dataset_name, input_datasets)
         
-        for r in df.itertuples(index=False):
-            rdf = pd.DataFrame([r])
+        for _, r in df.iterrows():
+            rdf = pd.DataFrame([r]).reset_index(drop=True)
         
             row_run_context = _LocalDataFrameRunContext(rdf, split_dataset_name, run_context)
 
