@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 
 from .. import server
@@ -27,6 +28,8 @@ parser.add_argument('--output-paths', dest='output_paths', help='Map output data
 parser.add_argument("--load-params", dest="load_params", action=_StoreDictKeyPair, metavar="KEY1=VAL1,KEY2=VAL2...")
 parser.add_argument("--run-params", dest="runtime_parameters", action=_StoreDictKeyPair, metavar="KEY1=VAL1,KEY2=VAL2...")
 
+parser.add_argument("--log-level")
+
 parser.add_argument('--split-dataset-for-perf', dest='split_dataset_name',
                     help='Input dataset to split for performance evaluation.')
 
@@ -38,6 +41,9 @@ parser.add_argument('--profile-processing-to-file', dest='profile_processing_to_
 
 
 args = parser.parse_args()
+
+if args.log_level is not None:
+    logging.basicConfig(level=args.log_level)
 
 instance = server.ServerInstance(args.config, args.load_params)
 
