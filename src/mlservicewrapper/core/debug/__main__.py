@@ -45,12 +45,13 @@ args = parser.parse_args()
 if args.log_level is not None:
     logging.basicConfig(level=args.log_level)
 
-instance = server.ServerInstance(args.config, args.load_params)
+instance = server.ServerInstance(args.config)
 
 local.run(
     instance,
 
-    load_parameters=instance.get_parameters(),
+    load_context=instance.build_context(override=args.load_params),
+
     runtime_parameters=args.runtime_parameters,
 
     input_dataset_paths=args.input_paths,

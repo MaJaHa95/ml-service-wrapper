@@ -68,25 +68,6 @@ def get_input_dataframe(name: str, file_lookup: _FileDatasetLookup) -> pd.DataFr
 
     return None
 
-class _LocalLoadContext(contexts.ServiceContext):
-    def __init__(self, parameters: dict = None):
-        self.__parameters = parameters or dict()
-
-        print("Loaded service parameters:")
-        print(self.__parameters)
-        print()
-            
-    def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        contexts.NameValidator.raise_if_invalid(name)
-        
-        if name in self.__parameters:
-            return self.__parameters[name]
-        
-        if required and default is None:
-            raise errors.MissingParameterError(name)
-
-        return default
-
 class _LocalRunContext(contexts.CollectingProcessContext):
     def __init__(self, input_datasets: _FileDatasetLookup, output_datasets: _FileDatasetLookup = None, parameters: dict = None):
         super().__init__()
@@ -178,7 +159,7 @@ async def _perform_accuracy_assessment(ctx: contexts.CollectingProcessContext, s
 
         print("Accuracy ({} to {}): {} of {} ({})".format(k, v, count_correct, count_total, count_correct / count_total))
 
-async def run_async(service: typing.Union[services.Service, typing.Callable], input_dataset_paths: typing.Dict[str, str] = None, input_dataset_directory: str = None, output_dataset_directory: str = None, output_dataset_paths: typing.Dict[str, str] = None, split_dataset_name: str = None, load_parameters: dict = None, runtime_parameters: dict = None, assess_accuracy: dict = None, profile_processing_to_file: str = None):
+async def run_async(service: typing.Union[services.Service, typing.Callable], load_context: contexts.ServiceContext = None, input_dataset_paths: typing.Dict[str, str] = None, input_dataset_directory: str = None, output_dataset_directory: str = None, output_dataset_paths: typing.Dict[str, str] = None, split_dataset_name: str = None, runtime_parameters: dict = None, assess_accuracy: dict = None, profile_processing_to_file: str = None):
     if input_dataset_paths is None and input_dataset_directory is None:
         logging.warn("Neither input_dataset_paths nor input_dataset_directory was specified, meaning input datasets will not be available!")
     
@@ -187,8 +168,9 @@ async def run_async(service: typing.Union[services.Service, typing.Callable], in
         initialized_service = True
     else:
         initialized_service = False
-    
-    load_context = _LocalLoadContext(load_parameters)
+
+    if load_context is None:
+        load_context = contexts.DictServiceContext(dict())
 
     if hasattr(service, 'load'):
         print("Loading...")
@@ -274,8 +256,8 @@ async def run_async(service: typing.Union[services.Service, typing.Callable], in
 
     return result
 
-def run(service: typing.Union[services.Service, typing.Callable], input_dataset_paths: typing.Dict[str, str] = None, input_dataset_directory: str = None, output_dataset_directory: str = None, output_dataset_paths: typing.Dict[str, str] = None, split_dataset_name: str = None, load_parameters: dict = None, runtime_parameters: dict = None, assess_accuracy: dict = None, profile_processing_to_file: str = None):
+def run(service: typing.Union[services.Service, typing.Callable], **kwargs):
 
     loop = asyncio.get_event_loop()
 
-    return loop.run_until_complete(run_async(service, input_dataset_paths, input_dataset_directory, output_dataset_directory, output_dataset_paths, split_dataset_name, load_parameters, runtime_parameters, assess_accuracy, profile_processing_to_file))
+    return loop.run_until_complete(run_async(service, **kwargs))

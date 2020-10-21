@@ -1,54 +1,131 @@
 import importlib.util
+import inspect
 import json
 import os
 import sys
 import typing
-from types import SimpleNamespace
-import inspect
+from pathlib import Path
 
-from .contexts import ServiceContext, EnvironmentVariableServiceContext, ProcessContext
-from .services import Service
+from . import contexts, errors, services
 
-__all__ = ["ServerInstance"]
+__all__ = ["ServiceConfiguration", "ServerInstance"]
+
+def _get_real_path(base_path: str, relative: str) -> Path:
+    if base_path is None:
+        base_path_dir = os.getcwd()
+    else:
+        base_path_dir = os.path.dirname(base_path)
+    
+    return Path(os.path.realpath(os.path.join(base_path_dir, relative)))
+    
+class ServiceConfiguration:
+    def __init__(self, path: str = None, config: dict = None):
+        if path is None:
+            self.__config = config.copy()
+        else:
+            self.__path = path
+                
+            with open(path, "r") as config_file:
+                self.__config = json.load(config_file)
+            
+        extends_path = self.__config.get("extends")
+
+        if extends_path is None:
+            self.__extends = None
+        else:
+            if isinstance(extends_path, str):
+                extends_path = _get_real_path(self.__path, extends_path)
+
+                self.__extends = ServiceConfiguration(path=extends_path)
+            else:
+                raise ValueError("Invalid configuration file! The 'extends' property, if present, must be a string.")
+
+
+    def __get_real_path(self, path: str) -> Path:
+        return _get_real_path(self.__path, path)
+        
+    def has_value(self, name: typing.Union[str, typing.List[str]]) -> bool:
+        return self.get_value(name) is not None
+        
+    def get_value(self, name: typing.Union[str, typing.List[str]]) -> typing.Any:
+        val, _ = self.__get_value_with_source(name)
+
+        return val
+
+    def get_real_path_value(self, name: typing.Union[str, typing.List[str]]) -> Path:
+        val, s = self.__get_value_with_source(name)
+
+        return s.__get_real_path(val)
+        
+    def __get_value_with_source(self, name: typing.Union[str, typing.List[str]]):
+        if isinstance(name, str):
+            result = self.__config.get(name)
+        else:
+            if name is None or len(name) == 0:
+                raise ValueError("Provide at least one name part")
+            
+            result = self.__config
+            for part in name:
+                result = result.get(part)
+
+                if result is None:
+                    break
+        
+        if result is None and self.__extends is not None:
+            return self.__extends.__get_value_with_source(name)
+
+        return result, self
+
+class _ConfigurationFileServiceContext(contexts.ServiceContext):
+    def __init__(self, config: ServiceConfiguration):
+        self.__config = config
+    
+    def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
+        contexts.NameValidator.raise_if_invalid(name)
+
+        val = self.__config.get_value(["parameters", name]) or default
+        
+        if required and val is None:
+            raise errors.MissingParameterError(name)
+
+        return val
+
+    def get_parameter_real_path_value(self, name: str, required: bool = True) -> Path:
+        contexts.NameValidator.raise_if_invalid(name)
+
+        val = self.__config.get_real_path_value(["parameters", name])
+        
+        if required and val is None:
+            raise errors.MissingParameterError(name)
+
+        return val
+        
 
 class ServerInstance:
-    def __init__(self, config_path: str = None, load_params_override: dict = None):
+    def __init__(self, config_path: str = None):
 
         if not config_path:
             config_path = os.environ.get("SERVICE_CONFIG_PATH", "./service/config.json")
 
-        with open(config_path, "r") as config_file:
-            config = json.load(config_file)
+        self.__config = ServiceConfiguration(config_path)
 
-        config_directory_path = os.path.dirname(config_path)
-        service_module_path = config.get("modulePath")
+        self.__service_module_path = self.__config.get_real_path_value("modulePath")
 
-        if service_module_path is None:
+        if self.__service_module_path is None:
             raise ValueError("The modulePath couldn't be determined!")
 
-        self.__service_module_path = os.path.realpath(os.path.join(config_directory_path, service_module_path))
-
-        self.__class_name = config.get("className")
-        self.__service_instance_name = config.get("serviceInstanceName")
+        self.__class_name = self.__config.get_value("className")
+        self.__service_instance_name = self.__config.get_value("serviceInstanceName")
 
         if self.__class_name is None and self.__service_instance_name is None:
             raise ValueError("Either className or serviceInstanceName must be specified in the configuration file!")
 
-        self.__parameters = dict()
-        config_parameters = config.get("parameters")
+        self.__host_configs = self.__config.get_value("host")
 
-        if config_parameters is not None:
-            self.__parameters.update(config_parameters)
-
-        if load_params_override is not None:
-            self.__parameters.update(load_params_override)
+        self.__schema = self.__config.get_value("schema")
+        self.__info = self.__config.get_value("info")
         
-        self.__host_configs = config.get("host")
-
-        self.__schema = config.get("schema")
-        self.__info = config.get("info")
-        
-        self.__service: Service = None
+        self.__service: services.Service = None
 
     def get_info(self) -> dict:
         return self.__info
@@ -93,10 +170,10 @@ class ServerInstance:
         
         return self.__host_configs.get(name)
 
-    def get_parameters(self) -> dict or None:
-        return self.__parameters
+    def get_parameter_real_path_value(self, name: str) -> str:
+        return self.__config.get_real_path_value(["parameters", name])
     
-    def __get_service_instance(self) -> Service:
+    def __get_service_instance(self) -> services.Service:
 
         print("Loading from script {}".format(self.__service_module_path))
 
@@ -129,14 +206,27 @@ class ServerInstance:
     def is_loaded(self):
         return self.__service is not None
 
-    async def load(self, ctx: ServiceContext = None):
+    def build_context(self, include_environment_variables = True, override: dict = None):
+        context_parts = []
+        
+        if override is not None:
+            context_parts.append(contexts.DictServiceContext(override))
+
+        if include_environment_variables:
+            context_parts.append(contexts.EnvironmentVariableServiceContext("SERVICE_"))
+        
+        if self.__config.has_value("parameters"):
+            context_parts.append(_ConfigurationFileServiceContext(self.__config))
+
+        return contexts.CoalescingServiceContext(context_parts)
+
+
+    async def load(self, ctx: contexts.ServiceContext = None):
         service = self.__get_service_instance()
         
         if hasattr(service, 'load'):
-            config_parameters = self.get_parameters()
-
             if ctx is None:
-                ctx = EnvironmentVariableServiceContext("SERVICE_", config_parameters)
+                ctx = self.build_context()
 
             print("service.load")
             load_result = service.load(ctx)
@@ -146,7 +236,7 @@ class ServerInstance:
 
         self.__service = service
 
-    async def process(self, ctx: ProcessContext):
+    async def process(self, ctx: contexts.ProcessContext):
         if not self.is_loaded():
             raise ValueError("Be sure to call load before process!")
         
