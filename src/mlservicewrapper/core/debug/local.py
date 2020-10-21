@@ -1,17 +1,17 @@
-import math
-import statistics
 import asyncio
 import json
+import logging
+import math
 import os
 import re
-import typing
+import statistics
 import time
+import typing
 
 import pandas as pd
 
-import logging
-
 from .. import contexts, errors, services
+
 
 def _print_ascii_histogram(seq: typing.List[float]) -> None:
     """A horizontal frequency-table/histogram plot."""
@@ -64,7 +64,7 @@ def get_input_dataframe(name: str, file_lookup: _FileDatasetLookup) -> pd.DataFr
     file_path = file_lookup.get_path(name, "csv")
 
     if file_path:
-        return pd.read_csv(file_path)
+        return pd.read_csv(file_path, keep_default_na=False)
 
     return None
 
