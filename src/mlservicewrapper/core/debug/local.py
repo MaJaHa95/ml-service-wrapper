@@ -49,6 +49,21 @@ class _FileDatasetLookup:
         self.__directory = directory
         self.__map = path_map
 
+    def find_file(self, name: str, exts: typing.Iterable[str]):
+        if self.__map is not None and name in self.__map:
+            return self.__map[name]
+
+        if self.__directory is None:
+            return None
+
+        for ext in exts:
+            path = self.get_path(name, ext)
+
+            if path is not None and os.path.exists(path):
+                return path
+
+        return None
+
     def get_path(self, name: str, extension: str):
         if self.__map is not None and name in self.__map:
             return self.__map[name]
@@ -61,12 +76,24 @@ class _FileDatasetLookup:
 def get_input_dataframe(name: str, file_lookup: _FileDatasetLookup) -> pd.DataFrame:
     contexts.NameValidator.raise_if_invalid(name)
 
-    file_path = file_lookup.get_path(name, "csv")
+    ext_handlers: typing.Dict[str, typing.Callable[[str], pd.DataFrame]] = {
+        "csv": lambda path: pd.read_csv(path, keep_default_na=False),
+        "xlsx": lambda path: pd.read_excel(path, keep_default_na=False)
+    }
 
-    if file_path:
-        return pd.read_csv(file_path, keep_default_na=False)
+    file_path = file_lookup.find_file(name, ext_handlers.keys())
 
-    return None
+    if not file_path:
+        return None
+
+    _, ext = os.path.splitext(file_path)
+
+    ext_handler = ext_handlers.get(ext[1:])
+
+    if not ext_handler:
+        raise NotImplementedError(f"File extension '{ext}' is not known!")
+
+    return ext_handler(file_path)
 
 class _LocalRunContext(contexts.CollectingProcessContext):
     def __init__(self, input_datasets: _FileDatasetLookup, output_datasets: _FileDatasetLookup = None, parameters: dict = None):
