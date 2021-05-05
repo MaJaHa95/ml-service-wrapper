@@ -45,8 +45,11 @@ class ConfigurationFile:
 
         return val
 
-    def get_real_path_value(self, name: typing.Union[str, typing.List[str]]) -> Path:
+    def get_real_path_value(self, name: typing.Union[str, typing.List[str]]) -> Path or None:
         val, s = self.__get_value_with_source(name)
+
+        if not val:
+            return None
 
         return s._get_real_path(val)
         
