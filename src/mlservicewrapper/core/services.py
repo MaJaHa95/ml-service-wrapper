@@ -1,9 +1,5 @@
-import types
-from typing import Union
 
-from pandas import DataFrame
-
-from .contexts import ProcessContext, ServiceContext
+from mlservicewrapper.core.contexts import ProcessContext, ServiceContext
 
 __all__ = ["Service"]
 

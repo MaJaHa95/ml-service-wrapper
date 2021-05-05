@@ -1,8 +1,12 @@
 import os
-from setuptools import find_namespace_packages, setup, find_packages
 
-with open("README.md", "r") as fh:
+from setuptools import find_namespace_packages, find_packages, setup
+
+with open(os.path.join(os.path.dirname(__file__), "README.md"), "r") as fh:
     long_description = fh.read()
+
+with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as fh:
+    install_requires = fh.read().split("\n")
 
 setup(
    name='mlservicewrapper-core',
@@ -18,9 +22,7 @@ setup(
    package_dir={"": "src"},
    packages=find_namespace_packages("src", include=['mlservicewrapper.*']),
 
-   install_requires=[
-      "pandas~=1.1"
-   ],
+   install_requires=install_requires,
    #namespace_packages=['mlservicewrapper.core.errors'],
    setup_requires=['setuptools_scm'],
    zip_safe=False,
