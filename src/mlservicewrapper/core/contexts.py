@@ -42,7 +42,7 @@ class ProcessContext:
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
         raise NotImplementedError()
     
-    async def get_input_dataframe(self, name: str, required: bool = True):
+    async def get_input_dataframe(self, name: str, required: bool = True) -> pd.DataFrame:
         raise NotImplementedError()
 
     async def set_output_dataframe(self, name: str, df: pd.DataFrame):
@@ -50,15 +50,15 @@ class ProcessContext:
         
 class CollectingProcessContext(ProcessContext):
     def __init__(self):
-        super()
-        self.__output_dataframes = dict()
+        super().__init__()
+        self.__output_dataframes: typing.Dict[str, pd.DataFrame] = dict()
 
     async def set_output_dataframe(self, name: str, df: pd.DataFrame):
         NameValidator.raise_if_invalid(name)
 
         self.__output_dataframes[name] = df
     
-    def get_output_dataframe(self, name: str):
+    def get_output_dataframe(self, name: str) -> pd.DataFrame:
         NameValidator.raise_if_invalid(name)
 
         return self.__output_dataframes.get(name)
@@ -68,6 +68,7 @@ class CollectingProcessContext(ProcessContext):
 
 class CoalescingServiceContext(ServiceContext):
     def __init__(self, contexts: typing.List[ServiceContext]):
+        super().__init__()
         self.__contexts = contexts
     
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
@@ -84,7 +85,7 @@ class CoalescingServiceContext(ServiceContext):
 
         return default
 
-    def get_parameter_real_path_value(self, name: str, required: bool = True) -> Path:
+    def get_parameter_real_path_value(self, name: str, required: bool = True) -> Path or None:
         NameValidator.raise_if_invalid(name)
 
         for context in self.__contexts:
@@ -100,6 +101,7 @@ class CoalescingServiceContext(ServiceContext):
 
 class DictServiceContext(ServiceContext):
     def __init__(self, values: dict):
+        super().__init__()
         self.__values = values
     
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
@@ -115,6 +117,7 @@ class DictServiceContext(ServiceContext):
 
 class EnvironmentVariableServiceContext(ServiceContext):
     def __init__(self, prefix: str):
+        super().__init__()
         self.__prefix = prefix
     
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:

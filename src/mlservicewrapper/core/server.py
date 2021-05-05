@@ -41,7 +41,7 @@ class ServiceConfiguration:
                 raise ValueError("Invalid configuration file! The 'extends' property, if present, must be a string.")
 
 
-    def __get_real_path(self, path: str) -> Path:
+    def _get_real_path(self, path: str) -> Path:
         return _get_real_path(self.__path, path)
         
     def has_value(self, name: typing.Union[str, typing.List[str]]) -> bool:
@@ -55,7 +55,7 @@ class ServiceConfiguration:
     def get_real_path_value(self, name: typing.Union[str, typing.List[str]]) -> Path:
         val, s = self.__get_value_with_source(name)
 
-        return s.__get_real_path(val)
+        return s._get_real_path(val)
         
     def __get_value_with_source(self, name: typing.Union[str, typing.List[str]]):
         if isinstance(name, str):
@@ -164,7 +164,7 @@ class ServerInstance:
     def get_output_dataset_specs(self) -> typing.Dict[str, dict]:
         return self.__get_dataset_specs("output")
 
-    def get_host_config_section(self, name: str) -> dict:
+    def get_host_config_section(self, name: str) -> dict or None:
         if self.__host_configs is None:
             return None
         
