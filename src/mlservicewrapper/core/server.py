@@ -7,7 +7,7 @@ import sys
 import typing
 from pathlib import Path
 
-from mlservicewrapper.core.internal.service_loading import get_service_loader
+import mlservicewrapper.core.internal.service_loading as service_loading
 import mlservicewrapper.core.configuration as configuration
 
 from mlservicewrapper.core import contexts, errors, services
@@ -47,7 +47,7 @@ class ServerInstance:
 
         self.__config = configuration.ServiceConfiguration(config_path)
 
-        self.__service_instance_loader = get_service_loader(self.__config.service())
+        self.__service_instance_loader = service_loading.get_service_loader(self.__config.service())
         
         self.__host_configs = self.__config.host()
 
