@@ -1,129 +1,49 @@
+import logging
 import os
 import re
 import typing
 from pathlib import Path
 
 import pandas as pd
+from mlservicewrapper.core import context_sources
 
-from mlservicewrapper.core import errors
+__all__ = ["ServiceContext", "ProcessContext"]
 
+        
+class ServiceContext(context_sources.ServiceContextSource):
+    def __init__(self, context_source: context_sources.ServiceContextSource, logger: logging.Logger) -> None:
+        super().__init__()
 
-class NameValidator:
-    __valid_name_regex = re.compile(r'^[A-Z][a-zA-Z\d]*$')
+        self._context_source = context_source
+        self._logger = logger
 
-    @classmethod
-    def raise_if_invalid(cls, name: str):
-        if not cls.is_valid(name):
-            raise ValueError("Name is not valid: '{}'!".format(name))
-    
-    @classmethod
-    def is_valid(cls, name: str):
-        return cls.__valid_name_regex.match(name) is not None
-    
-__all__ = ["NameValidator", "ServiceContext", "ProcessContext", "CollectingProcessContext", "EnvironmentVariableServiceContext", "CoalescingServiceContext"]
-
-class ServiceContext:
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        raise NotImplementedError()
+        return self._context_source.get_parameter_value(name, required=required, default=default)
 
     def get_parameter_real_path_value(self, name: str, required: bool = True) -> Path:
-        NameValidator.raise_if_invalid(name)
+        return self._context_source.get_parameter_real_path_value(name, required=required)
+    
+    @property
+    def logger(self):
+        return self._logger
+    
+class ProcessContext(context_sources.ProcessContextSource):
+    def __init__(self, context_source: context_sources.ProcessContextSource, logger: logging.Logger) -> None:
+        super().__init__()
 
-        val = self.get_parameter_value(name, required)
+        self._context_source = context_source
+        self._logger = logger
 
-        if val is None:
-            return val
-
-        return os.path.join(os.getcwd(), val)
-        
-class ProcessContext:
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        raise NotImplementedError()
+        return self._context_source.get_parameter_value(name, required=required, default=default)
     
     async def get_input_dataframe(self, name: str, required: bool = True) -> pd.DataFrame:
-        raise NotImplementedError()
+        return self._context_source.get_input_dataframe(name, required=required)
 
     async def set_output_dataframe(self, name: str, df: pd.DataFrame):
-        raise NotImplementedError()
-        
-class CollectingProcessContext(ProcessContext):
-    def __init__(self):
-        super().__init__()
-        self.__output_dataframes: typing.Dict[str, pd.DataFrame] = dict()
+        return self._context_source.set_output_dataframe(name, df)
 
-    async def set_output_dataframe(self, name: str, df: pd.DataFrame):
-        NameValidator.raise_if_invalid(name)
-
-        self.__output_dataframes[name] = df
+    @property
+    def logger(self):
+        return self._logger
     
-    def get_output_dataframe(self, name: str) -> pd.DataFrame:
-        NameValidator.raise_if_invalid(name)
-
-        return self.__output_dataframes.get(name)
-
-    def output_dataframes(self):
-        return self.__output_dataframes.items()
-
-class CoalescingServiceContext(ServiceContext):
-    def __init__(self, contexts: typing.List[ServiceContext]):
-        super().__init__()
-        self.__contexts = contexts
-    
-    def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        NameValidator.raise_if_invalid(name)
-
-        for context in self.__contexts:
-            val = context.get_parameter_value(name, False)
-
-            if val is not None:
-                return val
-            
-        if required and default is None:
-            raise errors.MissingParameterError(name)
-
-        return default
-
-    def get_parameter_real_path_value(self, name: str, required: bool = True) -> Path or None:
-        NameValidator.raise_if_invalid(name)
-
-        for context in self.__contexts:
-            val = context.get_parameter_real_path_value(name, False)
-
-            if val is not None:
-                return val
-            
-        if required:
-            raise errors.MissingParameterError(name)
-
-        return None
-
-class DictServiceContext(ServiceContext):
-    def __init__(self, values: dict):
-        super().__init__()
-        self.__values = values
-    
-    def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        NameValidator.raise_if_invalid(name)
-
-        ev = self.__values.get(name) or default
-
-        if required and not ev:
-            raise errors.MissingParameterError(name)
-
-        return ev
-
-
-class EnvironmentVariableServiceContext(ServiceContext):
-    def __init__(self, prefix: str):
-        super().__init__()
-        self.__prefix = prefix
-    
-    def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        NameValidator.raise_if_invalid(name)
-
-        ev = os.environ.get(self.__prefix + name) or default
-
-        if required and not ev:
-            raise errors.MissingParameterError(name)
-
-        return ev

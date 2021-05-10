@@ -1,9 +1,10 @@
-import os
-
 import importlib
+import os
+import typing
 
-from mlservicewrapper.core.configuration import ConfigurationFile, ServiceConfiguration, ServiceLoadParameters
 import mlservicewrapper.core.services as services
+from mlservicewrapper.core.configuration import ServiceLoadParameters
+
 
 class _BaseServiceModuleLoader:
     def load(self):
@@ -69,8 +70,11 @@ class BaseServiceLoader:
 
         return self._get_instance_from_module(module)
 
+    def get_name(self):
+        raise NotImplementedError()
+
 class _ClassServiceLoader(BaseServiceLoader):
-    def __init__(self, module_loader: _BaseServiceModuleLoader, class_name: str) -> None:
+    def __init__(self, module_loader: _BaseServiceModuleLoader, class_name: str, args: typing.List[typing.Any] = list(), kwds: typing.Dict[str, typing.Any] = dict()) -> None:
         super().__init__(module_loader)
 
         self._class_name = class_name
@@ -82,6 +86,9 @@ class _ClassServiceLoader(BaseServiceLoader):
 
         return service_type()
 
+    def get_name(self):
+        return self._class_name
+
 class _InstanceServiceLoader(BaseServiceLoader):
     def __init__(self, module_loader: _BaseServiceModuleLoader, instance_name: str) -> None:
         super().__init__(module_loader)
@@ -91,6 +98,9 @@ class _InstanceServiceLoader(BaseServiceLoader):
     def _get_instance_from_module(self, service_module) -> services.Service:
 
         return getattr(service_module, self._instance_name)
+
+    def get_name(self):
+        return self._instance_name
 
 
 def get_service_loader(config: ServiceLoadParameters) -> BaseServiceLoader:

@@ -50,7 +50,7 @@ instance = server.ServerInstance(args.config)
 local.run(
     instance,
 
-    load_context=instance.build_context(override=args.load_params),
+    load_context=instance.build_load_context_source(override=args.load_params),
 
     runtime_parameters=args.runtime_parameters,
 

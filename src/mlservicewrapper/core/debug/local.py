@@ -9,9 +9,9 @@ import time
 import typing
 
 import pandas as pd
-
 from mlservicewrapper.core.debug.file_lookups import FileDatasetLookup
-from mlservicewrapper.core.debug.profiling import BaseProfilerWrapper, get_profiler
+from mlservicewrapper.core.debug.profiling import (BaseProfilerWrapper,
+                                                   get_profiler)
 
 from .. import contexts, errors, services
 
@@ -54,7 +54,7 @@ def get_input_dataframe(name: str, file_lookup: FileDatasetLookup) -> pd.DataFra
 
     return file_handler.read_dataframe()
 
-class _LocalRunContext(contexts.CollectingProcessContext):
+class _LocalRunContext(contexts.CollectingProcessContextSource):
     def __init__(self, input_datasets: FileDatasetLookup, output_datasets: FileDatasetLookup = None, parameters: dict = None):
         super().__init__()
         self.__parameters = parameters or dict()
@@ -96,8 +96,8 @@ class _LocalRunContext(contexts.CollectingProcessContext):
 
         handler.save_dataframe(df)
 
-class _LocalDataFrameRunContext(contexts.ProcessContext):
-    def __init__(self, df: pd.DataFrame, name: str, base_ctx: contexts.ProcessContext):
+class _LocalDataFrameRunContext(contexts.ProcessContextSource):
+    def __init__(self, df: pd.DataFrame, name: str, base_ctx: contexts.ProcessContextSource):
         self.__base_ctx = base_ctx
         self.__name = name
         self.__df = df
@@ -116,7 +116,7 @@ class _LocalDataFrameRunContext(contexts.ProcessContext):
 
         return await self.__base_ctx.get_input_dataframe(name, required)
 
-async def _perform_accuracy_assessment(ctx: contexts.CollectingProcessContext, specs: typing.Dict[str, str]):
+async def _perform_accuracy_assessment(ctx: contexts.CollectingProcessContextSource, specs: typing.Dict[str, str]):
 
     for k, v in specs.items():
         i = k.split(".")
@@ -184,7 +184,7 @@ def _get_run_contexts(run_context: _LocalRunContext, split_dataset_name: str):
 
 async def _call_load(service: services.Service, load_context: contexts.ServiceContext = None):
     if load_context is None:
-        load_context = contexts.DictServiceContext(dict())
+        load_context = contexts.DictServiceContextSource(dict())
 
     if hasattr(service, 'load'):
         print("Loading...")
@@ -220,7 +220,8 @@ async def run_async(service: typing.Union[services.Service, typing.Callable], lo
     
     print("Running...")
 
-    run_context = _get_run_context(input_dataset_paths, input_dataset_directory, output_dataset_directory, output_dataset_paths, runtime_parameters)
+    run_context_source = _get_run_context(input_dataset_paths, input_dataset_directory, output_dataset_directory, output_dataset_paths, runtime_parameters)
+    run_context = contexts.ProcessContext(run_context_source)
 
     profiler = get_profiler(profile_processing_to_file)
 
@@ -240,10 +241,10 @@ async def run_async(service: typing.Union[services.Service, typing.Callable], lo
     if initialized_service and hasattr(service, 'dispose'):
         service.dispose()
     
-    result = dict(run_context.output_dataframes())
+    result = dict(run_context_source.output_dataframes())
 
     if assess_accuracy is not None:
-        await _perform_accuracy_assessment(run_context, assess_accuracy)
+        await _perform_accuracy_assessment(run_context_source, assess_accuracy)
 
     return result
 
