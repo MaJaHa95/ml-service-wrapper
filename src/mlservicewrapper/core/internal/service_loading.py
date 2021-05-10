@@ -74,17 +74,20 @@ class BaseServiceLoader:
         raise NotImplementedError()
 
 class _ClassServiceLoader(BaseServiceLoader):
-    def __init__(self, module_loader: _BaseServiceModuleLoader, class_name: str, args: typing.List[typing.Any] = list(), kwds: typing.Dict[str, typing.Any] = dict()) -> None:
+    def __init__(self, module_loader: _BaseServiceModuleLoader, class_name: str, args: typing.List[typing.Any] = None, kwds: typing.Dict[str, typing.Any] = None) -> None:
         super().__init__(module_loader)
 
         self._class_name = class_name
+
+        self._args = args or list()
+        self._kwds = kwds or dict()
 
     def _get_instance_from_module(self, service_module) -> services.Service:
         service_type = getattr(service_module, self._class_name)
 
         print("Identified service type: {}".format(str(service_type)))
 
-        return service_type()
+        return service_type(*self._args, **self._kwds)
 
     def get_name(self):
         return self._class_name
@@ -103,12 +106,12 @@ class _InstanceServiceLoader(BaseServiceLoader):
         return self._instance_name
 
 
-def get_service_loader(config: ServiceLoadParameters) -> BaseServiceLoader:
+def get_service_loader(config: ServiceLoadParameters, args: typing.List[typing.Any] = None, kwds: typing.Dict[str, typing.Any] = None) -> BaseServiceLoader:
 
     module_loader = _get_service_module_loader(config)
     
     if config.class_name:
-        return _ClassServiceLoader(module_loader, config.class_name)
+        return _ClassServiceLoader(module_loader, config.class_name, args, kwds)
 
     elif config.service_instance_name:
         return _InstanceServiceLoader(module_loader, config.service_instance_name)

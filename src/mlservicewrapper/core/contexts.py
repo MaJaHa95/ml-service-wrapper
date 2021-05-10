@@ -37,10 +37,10 @@ class ProcessContext(context_sources.ProcessContextSource):
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
         return self._context_source.get_parameter_value(name, required=required, default=default)
     
-    async def get_input_dataframe(self, name: str, required: bool = True) -> pd.DataFrame:
+    def get_input_dataframe(self, name: str, required: bool = True) -> pd.DataFrame:
         return self._context_source.get_input_dataframe(name, required=required)
 
-    async def set_output_dataframe(self, name: str, df: pd.DataFrame):
+    def set_output_dataframe(self, name: str, df: pd.DataFrame):
         return self._context_source.set_output_dataframe(name, df)
 
     @property

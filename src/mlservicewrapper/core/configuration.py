@@ -3,74 +3,8 @@ import os
 import typing
 from pathlib import Path
 
-def _get_real_path(base_path: str, relative: str) -> Path:
-    if base_path is None:
-        base_path_dir = os.getcwd()
-    else:
-        base_path_dir = os.path.dirname(base_path)
-    
-    return Path(os.path.realpath(os.path.join(base_path_dir, relative)))
-    
-class ConfigurationFile:
-    def __init__(self, path: str = None, config: dict = None):
-        if path is None:
-            self.__config = config.copy()
-        else:
-            self.__path = path
-                
-            with open(path, "r") as config_file:
-                self.__config = json.load(config_file)
-            
-        extends_path = self.__config.get("extends")
+from mlservicewrapper import config
 
-        if extends_path is None:
-            self.__extends = None
-        else:
-            if isinstance(extends_path, str):
-                extends_path = _get_real_path(self.__path, extends_path)
-
-                self.__extends = ConfigurationFile(path=extends_path)
-            else:
-                raise ValueError("Invalid configuration file! The 'extends' property, if present, must be a string.")
-
-
-    def _get_real_path(self, path: str) -> Path:
-        return _get_real_path(self.__path, path)
-        
-    def has_value(self, name: typing.Union[str, typing.List[str]]) -> bool:
-        return self.get_value(name) is not None
-        
-    def get_value(self, name: typing.Union[str, typing.List[str]]) -> typing.Any:
-        val, _ = self.__get_value_with_source(name)
-
-        return val
-
-    def get_real_path_value(self, name: typing.Union[str, typing.List[str]]) -> Path or None:
-        val, s = self.__get_value_with_source(name)
-
-        if not val:
-            return None
-
-        return s._get_real_path(val)
-        
-    def __get_value_with_source(self, name: typing.Union[str, typing.List[str]]):
-        if isinstance(name, str):
-            result = self.__config.get(name)
-        else:
-            if name is None or len(name) == 0:
-                raise ValueError("Provide at least one name part")
-            
-            result = self.__config
-            for part in name:
-                result = result.get(part)
-
-                if result is None:
-                    break
-        
-        if result is None and self.__extends is not None:
-            return self.__extends.__get_value_with_source(name)
-
-        return result, self
 
 class ParameterSchema:
     def __init__(self, name: str, d: dict) -> None:
@@ -93,11 +27,11 @@ class DatasetSchema:
         self.item_schema = d.get("itemSchema")
 
 class ServiceSchema:
-    def __init__(self, schema_spec: dict) -> None:
+    def __init__(self, schema_spec: config.ConfigurationPart) -> None:
         self._schema_spec = schema_spec
 
     def _get_parameters_schema(self, name: str):
-        p: typing.Dict[str, dict] = self._schema_spec.get("parameters", dict())
+        p: typing.Dict[str, dict] = self._schema_spec.get_dict_value("parameters") or dict()
 
         ret = p.get(name, dict())
 
@@ -107,7 +41,7 @@ class ServiceSchema:
         if self._schema_spec is None:
             return list()
 
-        datasets: typing.Dict[str, typing.Dict[str, dict]] = self._schema_spec.get("datasets")
+        datasets: typing.Dict[str, typing.Dict[str, dict]] = self._schema_spec.get_dict_value("datasets") or dict()
 
         if datasets is None:
             return list()
@@ -132,35 +66,30 @@ class ServiceSchema:
         return self._get_dataset_specs("output")
 
 class ServiceInfo:
-    def __init__(self, vals: dict) -> None:
-        self.name = vals.get("name")
-        self.version = vals.get("version")
+    def __init__(self, vals: config.ConfigurationPart) -> None:
+        self.name = vals.get_value("name")
+        self.version = vals.get_value("version")
 
 class ServiceHostParameters:
-    def __init__(self, vals: dict) -> None:
+    def __init__(self, vals: config.ConfigurationPart) -> None:
         self._vals = vals
 
     def get_host_config(self, name: str):
-        d: dict = self._vals.get(name)
-
-        if not d:
-            return dict()
-
-        return d
+        return self._vals.get_sub_config(name, is_nested=True, required=False)
 
 class ServiceParameters:
-    def __init__(self, config: ConfigurationFile) -> None:
-        self._config = config
+    def __init__(self, config_part: config.ConfigurationPart) -> None:
+        self._config = config_part
 
     def get_value(self, name: str):
-        return self._config.get_value(["parameters", name])
+        return self._config.get_value(name)
 
     def get_real_path_value(self, name: str):
-        return self._config.get_real_path_value(["parameters", name])
+        return self._config.get_fully_qualified_path(name)
 
 class ServiceLoadParameters:
-    def __init__(self, config: ConfigurationFile) -> None:
-        self.module_path = config.get_real_path_value("modulePath")
+    def __init__(self, config: config.ConfigurationPart) -> None:
+        self.module_path = config.get_fully_qualified_path("modulePath")
         self.module_name = config.get_value("moduleName")
         self.package_name = config.get_value("packageName")
 
@@ -180,27 +109,29 @@ class ServiceLoadParameters:
 
 T = typing.TypeVar("T")
 class ServiceConfiguration:
-    def __init__(self, config_file: typing.Union[str, ConfigurationFile]) -> None:
-        if isinstance(config_file, str):
-            config_file = ConfigurationFile(config_file)
-        
-        self._config = config_file
+    def __init__(self, config_file: str, host_type: str) -> None:
+        self._config = config.from_file(config_file)
 
-    def _has(self, name: str):
-        d = self._config.get_value(name)
+        if host_type:
+            hosts = self._config.get_sub_config("host", is_nested=True, required=False)
 
-        return d is not None
+            self._config = hosts.get_sub_config(host_type, is_nested=True, required=False)
 
-    def _get_typed(self, type: typing.Callable[[dict], T], name: str, coalesce = False) -> T:
-        d = self._config.get_value(name)
+    def _get_typed(self, type: typing.Callable[[config.ConfigurationPart], T], name: str, coalesce = False) -> T:
+        d = self._config.get_sub_config(name)
 
-        if not d:
-            if coalesce:
-                return type(dict())
-            else:
-                return None
+        if d:
+            return type(d)
+        if coalesce:
+            return type(config.empty())
+        else:
+            return None
 
-        return type(d)
+    def plugins(self):
+        parts = self._config.get_multi_sub_config("plugins")
+
+        for part in parts:
+            yield ServiceLoadParameters(part)
 
     def service(self):
         return ServiceLoadParameters(self._config)
@@ -214,8 +145,5 @@ class ServiceConfiguration:
     def host(self):
         return self._get_typed(ServiceHostParameters, "host", coalesce=True)
 
-    def has_parameters(self):
-        return self._has("parameters")
-
     def parameters(self):
-        return ServiceParameters(self._config)
+        return ServiceParameters(self._config.get_sub_config("parameters"))
