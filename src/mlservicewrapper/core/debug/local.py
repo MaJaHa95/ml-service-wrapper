@@ -7,6 +7,7 @@ import time
 import typing
 
 import pandas as pd
+from mlservicewrapper.core import context_sources, server
 from mlservicewrapper.core.debug.file_lookups import FileDatasetLookup
 from mlservicewrapper.core.debug.profiling import (BaseProfilerWrapper,
                                                    get_profiler)
@@ -46,13 +47,13 @@ def _print_ascii_histogram(seq: typing.List[float]) -> None:
         print('{0:5f}s {1}'.format(e, '+' * w))
 
 def get_input_dataframe(name: str, file_lookup: FileDatasetLookup) -> pd.DataFrame:
-    contexts.NameValidator.raise_if_invalid(name)
+    context_sources.NameValidator.raise_if_invalid(name)
 
     file_handler = file_lookup.get_file_handler(name)
 
     return file_handler.read_dataframe()
 
-class _LocalRunContext(contexts.CollectingProcessContextSource):
+class _LocalRunContextSource(context_sources.CollectingProcessContextSource):
     def __init__(self, input_datasets: FileDatasetLookup, output_datasets: FileDatasetLookup = None, parameters: dict = None):
         super().__init__()
         self.__parameters = parameters or dict()
@@ -61,7 +62,7 @@ class _LocalRunContext(contexts.CollectingProcessContextSource):
         self.output_datasets = output_datasets
 
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        contexts.NameValidator.raise_if_invalid(name)
+        context_sources.NameValidator.raise_if_invalid(name)
         
         if name in self.__parameters:
             return self.__parameters[name]
@@ -80,7 +81,7 @@ class _LocalRunContext(contexts.CollectingProcessContextSource):
         return df
 
     async def set_output_dataframe(self, name: str, df: pd.DataFrame):
-        contexts.NameValidator.raise_if_invalid(name)
+        context_sources.NameValidator.raise_if_invalid(name)
 
         await super().set_output_dataframe(name, df)
 
@@ -94,8 +95,8 @@ class _LocalRunContext(contexts.CollectingProcessContextSource):
 
         handler.save_dataframe(df)
 
-class _LocalDataFrameRunContext(contexts.ProcessContextSource):
-    def __init__(self, df: pd.DataFrame, name: str, base_ctx: contexts.ProcessContextSource):
+class _LocalDataFrameRunContextSource(context_sources.ProcessContextSource):
+    def __init__(self, df: pd.DataFrame, name: str, base_ctx: context_sources.ProcessContextSource):
         self.__base_ctx = base_ctx
         self.__name = name
         self.__df = df
@@ -107,14 +108,14 @@ class _LocalDataFrameRunContext(contexts.ProcessContextSource):
         return self.__base_ctx.set_output_dataframe(name, df)
 
     async def get_input_dataframe(self, name: str, required: bool = True):
-        contexts.NameValidator.raise_if_invalid(name)
+        context_sources.NameValidator.raise_if_invalid(name)
         
         if name == self.__name:
             return self.__df
 
         return await self.__base_ctx.get_input_dataframe(name, required)
 
-async def _perform_accuracy_assessment(ctx: contexts.CollectingProcessContextSource, specs: typing.Dict[str, str]):
+async def _perform_accuracy_assessment(ctx: context_sources.CollectingProcessContextSource, specs: typing.Dict[str, str]):
 
     for k, v in specs.items():
         i = k.split(".")
@@ -139,17 +140,17 @@ async def _perform_accuracy_assessment(ctx: contexts.CollectingProcessContextSou
         print("Accuracy ({} to {}): {} of {} ({})".format(k, v, count_correct, count_total, count_correct / count_total))
 
 class _ServiceProcessTimer:
-    def __init__(self, service: services.Service, profiler: "BaseProfilerWrapper") -> None:
+    def __init__(self, server_instance: server.ServerInstance, profiler: "BaseProfilerWrapper") -> None:
         self._times: typing.List[float] = list()
 
-        self._service = service
+        self._server_instance = server_instance
         self._profiler = profiler
 
-    async def process(self, ctx: contexts.ProcessContext):
+    async def process(self, ctx: context_sources.ProcessContextSource):
         
         s = time.perf_counter()
         self._profiler.enable()
-        await self._service.process(ctx)
+        await self._server_instance.process(ctx)
         self._profiler.disable()
         e = time.perf_counter()
 
@@ -170,29 +171,23 @@ class _ServiceProcessTimer:
 
             _print_ascii_histogram(self._times)
 
-def _get_run_contexts(run_context: _LocalRunContext, split_dataset_name: str):
+def _get_run_contexts(run_context: _LocalRunContextSource, split_dataset_name: str):
     df = get_input_dataframe(split_dataset_name, run_context.input_datasets)
     
     for _, r in df.iterrows():
         rdf = pd.DataFrame([r]).reset_index(drop=True)
     
-        row_run_context = _LocalDataFrameRunContext(rdf, split_dataset_name, run_context)
+        row_run_context = _LocalDataFrameRunContextSource(rdf, split_dataset_name, run_context)
 
         yield row_run_context
 
-async def _call_load(service: services.Service, load_context: contexts.ServiceContext = None):
-    if load_context is None:
-        load_context = contexts.DictServiceContextSource(dict())
+async def _call_load(server_instance: server.ServerInstance, load_context_source: context_sources.ServiceContextSource = None, load_context_override: dict = None):
+    print("Loading...")
+    s = time.perf_counter()
+    await server_instance.load(load_context_source, override=load_context_override)
+    e = time.perf_counter()
 
-    if hasattr(service, 'load'):
-        print("Loading...")
-        s = time.perf_counter()
-        await service.load(load_context)
-        e = time.perf_counter()
-
-        load_time = e - s
-    else:
-        load_time = 0
+    load_time = e - s
     
     return load_time
 
@@ -201,44 +196,34 @@ def _get_run_context(input_dataset_paths: typing.Dict[str, str] = None, input_da
     input_datasets = FileDatasetLookup(input_dataset_directory, input_dataset_paths)
     output_datasets = FileDatasetLookup(output_dataset_directory, output_dataset_paths)
 
-    return _LocalRunContext(input_datasets, output_datasets, runtime_parameters)
+    return _LocalRunContextSource(input_datasets, output_datasets, runtime_parameters)
 
 
-async def run_async(service: typing.Union[services.Service, typing.Callable], load_context: contexts.ServiceContext = None, input_dataset_paths: typing.Dict[str, str] = None, input_dataset_directory: str = None, output_dataset_directory: str = None, output_dataset_paths: typing.Dict[str, str] = None, split_dataset_name: str = None, runtime_parameters: dict = None, assess_accuracy: dict = None, profile_processing_to_file: str = None):
+async def run_async(server_instance: server.ServerInstance, load_context_source: context_sources.ServiceContextSource = None, load_context_override: dict = None, input_dataset_paths: typing.Dict[str, str] = None, input_dataset_directory: str = None, output_dataset_directory: str = None, output_dataset_paths: typing.Dict[str, str] = None, split_dataset_name: str = None, runtime_parameters: dict = None, assess_accuracy: dict = None, profile_processing_to_file: str = None):
     if input_dataset_paths is None and input_dataset_directory is None:
         logging.warn("Neither input_dataset_paths nor input_dataset_directory was specified, meaning input datasets will not be available!")
     
-    if callable(service):
-        service = service()
-        initialized_service = True
-    else:
-        initialized_service = False
-
-    load_time = await _call_load(service, load_context)
+    load_time = await _call_load(server_instance, load_context_source, load_context_override)
     
     print("Running...")
 
     run_context_source = _get_run_context(input_dataset_paths, input_dataset_directory, output_dataset_directory, output_dataset_paths, runtime_parameters)
-    run_context = contexts.ProcessContext(run_context_source)
 
     profiler = get_profiler(profile_processing_to_file)
 
-    process_timer = _ServiceProcessTimer(service, profiler)
+    process_timer = _ServiceProcessTimer(server_instance, profiler)
 
     if split_dataset_name:
-        for ctx in _get_run_contexts(run_context, split_dataset_name):
+        for ctx in _get_run_contexts(run_context_source, split_dataset_name):
             await process_timer.process(ctx)
     else:
-        await process_timer.process(run_context)
+        await process_timer.process(run_context_source)
 
     profiler.save()
 
     print("Load time: {}s".format(load_time))
     process_timer.print_stats()
 
-    if initialized_service and hasattr(service, 'dispose'):
-        service.dispose()
-    
     result = dict(run_context_source.output_dataframes())
 
     if assess_accuracy is not None:

@@ -138,9 +138,9 @@ class ServerInstance:
 
         return context_sources.CoalescingServiceContextSource(context_parts)
 
-    def build_load_context(self, ctx_source: context_sources.ServiceContextSource = None):
+    def build_load_context(self, ctx_source: context_sources.ServiceContextSource = None, include_environment_variables = True, override: dict = None):
         if ctx_source is None:
-            ctx_source = self._build_load_context_source()
+            ctx_source = self._build_load_context_source(include_environment_variables=include_environment_variables, override=override)
 
         ctx = contexts.ServiceContext(ctx_source, self._get_load_logger())
 
@@ -152,11 +152,11 @@ class ServerInstance:
     def _get_process_logger(self):
         return self.__logger.getChild("process")
 
-    async def load(self, ctx_source: context_sources.ServiceContextSource = None):
+    async def load(self, ctx_source: context_sources.ServiceContextSource = None, include_environment_variables = True, override: dict = None):
         service = self.__get_service_instance()
 
         if service.has_load():
-            ctx = self.build_load_context(ctx_source)
+            ctx = self.build_load_context(ctx_source, include_environment_variables=include_environment_variables, override=override)
 
             print("service.load")
             await service.load(ctx)

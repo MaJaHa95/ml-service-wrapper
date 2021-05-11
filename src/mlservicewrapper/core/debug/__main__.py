@@ -8,7 +8,7 @@ from . import local
 
 #https://stackoverflow.com/a/42355279/1270504
 class _StoreDictKeyPair(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(self, parser, namespace, values: str, option_string=None):
         my_dict = {}
         for kv in values.split(","):
             k,v = kv.split("=")
@@ -45,12 +45,12 @@ args = parser.parse_args()
 if args.log_level is not None:
     logging.basicConfig(level=args.log_level)
 
-instance = server.ServerInstance(args.config)
+instance = server.ServerInstance("debug", args.config)
 
 local.run(
     instance,
 
-    load_context=instance.build_load_context_source(override=args.load_params),
+    load_context_override=args.load_params,
 
     runtime_parameters=args.runtime_parameters,
 
