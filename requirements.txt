@@ -1,2 +1,2 @@
-pandas~=1.1
+pandas~=1.2
 mlservicewrapper-config~=0.3
