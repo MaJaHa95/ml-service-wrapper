@@ -1,11 +1,11 @@
-import logging
 import os
 import re
 import typing
 from pathlib import Path
 
 import pandas as pd
-from mlservicewrapper.core import errors
+
+from . import errors
 
 
 class NameValidator:

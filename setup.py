@@ -23,7 +23,7 @@ setup(
    packages=find_namespace_packages("src", include=['mlservicewrapper.*']),
 
    install_requires=install_requires,
-   #namespace_packages=['mlservicewrapper.core.errors'],
+   
    setup_requires=['setuptools_scm'],
    zip_safe=False,
    python_requires='>=3.6'

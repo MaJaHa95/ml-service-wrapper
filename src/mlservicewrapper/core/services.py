@@ -1,5 +1,5 @@
 
-from mlservicewrapper.core.contexts import ProcessContext, ServiceContext
+from .contexts import ProcessContext, ServiceContext
 
 __all__ = ["Service"]
 

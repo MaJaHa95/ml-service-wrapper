@@ -1,7 +1,4 @@
-import json
-import os
 import typing
-from pathlib import Path
 
 from mlservicewrapper import config
 

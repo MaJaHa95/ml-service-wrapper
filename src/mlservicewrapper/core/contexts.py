@@ -1,11 +1,9 @@
 import logging
-import os
-import re
-import typing
 from pathlib import Path
 
 import pandas as pd
-from mlservicewrapper.core import context_sources
+
+from . import context_sources
 
 __all__ = ["ServiceContext", "ProcessContext"]
 
